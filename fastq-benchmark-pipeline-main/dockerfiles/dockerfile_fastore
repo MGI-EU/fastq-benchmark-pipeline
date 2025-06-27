@@ -1,0 +1,34 @@
+FROM ubuntu:14.04 as base
+
+RUN apt-get update && apt-get install -y git make
+
+
+RUN apt-get update && \
+    apt-get install -y software-properties-common && \
+    add-apt-repository ppa:ubuntu-toolchain-r/test -y && \
+    apt-get update && \
+    apt-get install -y gcc-4.8 g++-4.8 && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-4.8 100 \
+    && update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-4.8 100
+
+RUN apt-get update && apt-get install libz-dev
+
+RUN git clone https://github.com/refresh-bio/FaStore.git && \
+    cd FaStore && make -j `nproc` && chmod 755 scripts/*.sh
+
+
+FROM ubuntu:14.04
+
+COPY --from=base /FaStore/bin /FaStore/scripts
+COPY --from=base /FaStore/scripts /FaStore/scripts
+
+RUN sed -i 's/FASTORE_BIN=.\//FASTORE_BIN=\/FaStore\/scripts\//g' /FaStore/scripts/*.sh
+RUN sed -i 's/FASTORE_REBIN=.\//FASTORE_REBIN=\/FaStore\/scripts\//g' /FaStore/scripts/*.sh
+RUN sed -i 's/FASTORE_PACK=.\//FASTORE_PACK=\/FaStore\/scripts\//g' /FaStore/scripts/*.sh
+
+# Add Fastore scripts to PATH
+ENV PATH="/FaStore/scripts:${PATH}"
+
+RUN apt-get update && apt-get install time

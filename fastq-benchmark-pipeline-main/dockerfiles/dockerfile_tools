@@ -1,0 +1,55 @@
+FROM ubuntu:22.04 as build
+ENV SAMTOOLS_VERSION 1.9
+ENV PICARD_VERSION 2.21.1
+ENV CRUMBLE_VERSION 0.8.3
+
+RUN apt-get update && \
+    apt-get install -y gcc g++ wget ncurses-dev zlib1g-dev libbz2-dev liblzma-dev build-essential git cmake libtool libgomp1
+
+# Install FQZcomp
+RUN git clone https://github.com/jkbonfield/fqzcomp.git && \
+    cd fqzcomp && make -j `nproc`
+
+# Install FQZcomp5
+RUN git clone --recursive https://github.com/jkbonfield/fqzcomp5.git && \
+cd fqzcomp5 && make -j `nproc`
+
+# Install Spring
+RUN git clone https://github.com/shubhamchandak94/Spring.git && \
+    cd Spring && mkdir build && cd build && cmake ../ && make -j `nproc`
+
+# Install repaq
+RUN git clone https://github.com/OpenGene/repaq.git && \
+    cd repaq && make -j `nproc` && make install
+
+# Clone the DSRC source code && Compile
+RUN git clone https://github.com/refresh-bio/DSRC.git DSRC/
+RUN cd DSRC && make -f Makefile.c++11 bin
+
+# Install quip
+RUN git clone https://github.com/dcjones/quip.git
+RUN cd quip && autoreconf -i && ./configure && make install
+
+#########################################################################################################
+# Final image
+FROM ubuntu:22.04
+RUN apt-get update && apt-get install libgomp1
+RUN apt-get install -y python3 pigz time wget xz-utils
+RUN apt-get autoclean && apt-get autoremove
+RUN rm -rf /var/lib/apt/lists/*
+RUN wget https://bootstrap.pypa.io/get-pip.py && python3 get-pip.py && pip install dataclasses
+
+RUN wget https://github.com/GATB/leon/releases/download/v1.0.0/leon-v1.0.0-bin-Linux.tar.gz
+RUN tar -vxzf leon-v1.0.0-bin-Linux.tar.gz
+
+# COPY --from=build /quip/quip /usr/local/bin/quip
+COPY --from=build /DSRC/bin/dsrc /usr/local/bin/dsrc
+COPY --from=build /fqzcomp5/fqzcomp5 /usr/local/bin/fqzcomp5
+COPY --from=build /fqzcomp/fqzcomp /usr/local/bin/fqzcomp
+COPY --from=build /repaq/repaq /usr/local/bin/repaq
+COPY --from=build /Spring/build/spring /Spring/build/spring
+COPY --from=build /usr/local/lib /usr/local/lib
+ENV PATH="/leon-v1.0.0-bin-Linux/bin:/Spring/build/:/fqzcomp4/:/fqzcomp5/:/usr/local/bin:${PATH}"
+RUN /sbin/ldconfig -v
+
+# ENTRYPOINT ["run_benchmark.py"]
